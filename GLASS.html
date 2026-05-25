@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 玻璃容器設計與容積計算器</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js (用於 3D 渲染) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+                        serif: ['Georgia', 'Cambria', '"Times New Roman"', 'Times', '"Noto Serif TC"', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 隱藏滾動條但保留滾動功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* 漸變動畫 */
+        .transition-all-custom {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        /* 優化後更為精緻的大型滑桿樣式 (高度縮小約 20%) */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            background: rgba(100, 116, 139, 0.25);
+            height: 8px; /* 稍微變細更為精緻 */
+            border-radius: 4px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            margin-top: -5px;
+            background-color: currentColor;
+            height: 18px; /* 調小按鈕尺寸更美觀 */
+            width: 18px;
+            border-radius: 50%;
+            transition: transform 0.1s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+    </style>
+</head>
+<body class="h-full w-full transition-all-custom overflow-hidden selection:bg-neutral-300 selection:text-neutral-900 font-sans">
+
+    <!-- 主體背景與應用程式版面 (高對比度明亮視覺) -->
+    <div id="app" class="relative w-full h-full flex flex-col md:flex-row transition-colors duration-500 bg-neutral-100 text-neutral-900">
+        
+        <!-- 左側控制面板 (寬度 440px，精簡 padding 避免整體太長) -->
+        <div class="w-full md:w-[440px] h-[45%] md:h-full flex flex-col justify-between border-b md:border-b-0 md:border-r border-neutral-300 p-5 md:p-6 overflow-y-auto no-scrollbar z-10 bg-white shadow-2xl">
+            
+            <div class="space-y-6">
+                <!-- 標題區域 (縮小字體提升整體可視高度) -->
+                <div class="pt-1">
+                    <h1 class="text-xl md:text-2xl font-black tracking-tight text-neutral-800">
+                        玻璃容器設計器
+                    </h1>
+                 </div>
+
+                <!-- 參數控制拉霸區 (字體比例調整，外距縮小) -->
+                <div class="space-y-5 pt-3 border-t-2 border-neutral-200">
+                    <h2 class="text-base md:text-lg uppercase tracking-wider font-extrabold text-neutral-800 mb-3">尺寸參數設定</h2>
+                    
+                    <!-- 外長度 (L) -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-base md:text-lg font-bold text-neutral-800">外長度 (L)</span>
+                            <span class="font-mono font-extrabold text-lg text-neutral-950 bg-neutral-100 px-2 py-0.5 rounded-lg shadow-sm" id="val-length">10 cm</span>
+                        </div>
+                        <input type="range" id="input-length" min="10" max="30" step="1" value="10" class="w-full text-neutral-900">
+                    </div>
+
+                    <!-- 外寬度 (W) -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-base md:text-lg font-bold text-neutral-800">外寬度 (W)</span>
+                            <span class="font-mono font-extrabold text-lg text-neutral-950 bg-neutral-100 px-2 py-0.5 rounded-lg shadow-sm" id="val-width">10 cm</span>
+                        </div>
+                        <input type="range" id="input-width" min="10" max="30" step="1" value="10" class="w-full text-neutral-900">
+                    </div>
+
+                    <!-- 外高度 (H) -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-base md:text-lg font-bold text-neutral-800">外高度 (H)</span>
+                            <span class="font-mono font-extrabold text-lg text-neutral-950 bg-neutral-100 px-2 py-0.5 rounded-lg shadow-sm" id="val-height">10 cm</span>
+                        </div>
+                        <input type="range" id="input-height" min="10" max="30" step="1" value="10" class="w-full text-neutral-900">
+                    </div>
+
+                    <!-- 壁厚 (t) -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-base md:text-lg font-bold text-emerald-800">玻璃壁厚 (t)</span>
+                            <span class="font-mono font-extrabold text-lg text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg shadow-sm border border-emerald-100" id="val-thickness">1.2 cm</span>
+                        </div>
+                        <input type="range" id="input-thickness" min="1" max="3" step="1" value="2" class="w-full text-emerald-600">
+                    </div>
+
+                    <!-- 有無蓋子 (優化按鈕尺寸比例與垂直間距) -->
+                    <div class="flex items-center justify-between py-3 border-t border-b border-neutral-200">
+                        <span class="text-base md:text-lg font-bold text-neutral-800">配置密封玻璃蓋</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="input-has-lid" class="sr-only peer" checked>
+                            <div class="w-12 h-7 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                    </div>
+
+                    <!-- 注入液體 (輔助注水) -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-base md:text-lg font-bold text-blue-800">模擬注水高度</span>
+                            <span class="font-mono font-extrabold text-lg text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg shadow-sm border border-blue-100" id="val-water-level">40%</span>
+                        </div>
+                        <input type="range" id="input-water" min="0" max="100" step="5" value="50" class="w-full text-blue-600">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 計算結果摘要 (微縮 80%，減少外距與內距避免整體被拉得太長) -->
+            <div class="mt-6 pt-5 border-t-2 border-neutral-200 space-y-4 bg-neutral-50 -mx-5 -mb-5 p-5">
+            
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- 內部容積 (淨容量，全寬 Layout，高度精簡) -->
+                    <div class="col-span-2 bg-emerald-50 border-2 border-emerald-300 p-3 rounded-xl shadow-sm text-center">
+                        <span class="text-sm md:text-base font-bold text-emerald-800 block">內部容積 (淨容量)</span>
+                        <span class="text-2xl md:text-3xl font-black font-mono text-emerald-700 block mt-0.5" id="res-inner-vol">0 mL</span>
+                        <span class="text-sm md:text-base font-bold text-emerald-600 block mt-0.5" id="res-inner-vol-l">0.00 L</span>
+                    </div>
+                    
+                    <!-- 容器外體積 (半寬 Layout) -->
+                    <div class="bg-white border-2 border-neutral-200 p-3 rounded-lg shadow-sm text-center flex flex-col justify-between">
+                        <span class="text-xs md:text-sm font-bold text-neutral-700 block">容器外體積</span>
+                        <div>
+                            <span class="text-lg md:text-xl font-black font-mono text-neutral-950 block mt-0.5" id="res-outer-vol">0 cm³</span>
+                            <span class="text-xs font-bold text-neutral-600 block mt-0.5" id="res-outer-dim">0×0×0 cm</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 玻璃耗材體積 (半寬 Layout) -->
+                    <div class="bg-white border-2 border-neutral-200 p-3 rounded-lg shadow-sm text-center flex flex-col justify-between">
+                        <span class="text-xs md:text-sm font-bold text-neutral-700 block">玻璃耗材體積</span>
+                        <div class="pb-1">
+                            <span class="text-lg md:text-xl font-black font-mono text-neutral-950 block mt-0.5" id="res-glass-vol">0 cm³</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 水量計算 (緊湊精確藍色提示條) -->
+                <div id="water-info-panel" class="hidden text-sm md:text-base bg-blue-600 text-white p-2.5 rounded-xl text-center font-bold shadow-md">
+                    當前模擬裝水量: <span id="res-water-vol" class="font-mono text-lg">0</span> mL
+                </div>
+            </div>
+        </div>
+
+        <!-- 右側 3D 畫布區域 (桌面端填滿，行動端 55% 佔比) -->
+        <div class="flex-1 h-[55%] md:h-full relative flex items-center justify-center bg-transparent">
+            
+            <!-- 3D Canvas -->
+            <div id="canvas-container" class="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing"></div>
+
+            <!-- 右上角工具：自動旋轉與重設視角 (微縮按鈕大小，提升整體畫面比例) -->
+            <div class="absolute top-5 right-5 flex items-center gap-2 z-10 pointer-events-auto">
+                <button id="btn-auto-rotate" class="px-4 py-2 text-sm rounded-full bg-white shadow-md border-2 border-neutral-300 hover:border-neutral-900 transition-all flex items-center gap-2 text-neutral-800 font-bold">
+                    <span id="rotate-status-dot" class="w-2.5 h-2.5 rounded-full bg-neutral-400"></span>
+                    <span>自動旋轉</span>
+                </button>
+                <button id="btn-reset-cam" class="p-2.5 rounded-full bg-white shadow-md border-2 border-neutral-300 hover:border-neutral-900 transition-all text-neutral-800" title="重設視角">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 底部主題控制列 (懸浮滑鼠移近時顯現，更為精緻的 16px/18px 左右字型) -->
+            <div class="absolute bottom-0 left-0 w-full p-5 flex flex-col items-center justify-center pointer-events-none z-20 hover-trigger">
+                <div class="hover-target opacity-0 transform translate-y-3 transition-all duration-300 pointer-events-auto flex items-center gap-5 px-5 py-3 rounded-2xl bg-white shadow-2xl border-2 border-neutral-300 text-neutral-800">
+                    
+                    <!-- 主題切換 (微縮按鈕使控制列精巧) -->
+                    <div class="flex items-center gap-2">
+                        <button onclick="setTheme('light')" class="w-6 h-6 rounded-full bg-neutral-100 border-2 border-neutral-400 hover:scale-110 transition-transform shadow-sm" title="明亮模式"></button>
+                        <button onclick="setTheme('dark')" class="w-6 h-6 rounded-full bg-neutral-950 border-2 border-neutral-700 hover:scale-110 transition-transform shadow-sm" title="深色模式"></button>
+                        <button onclick="setTheme('sepia')" class="w-6 h-6 rounded-full bg-[#f4ecd8] border-2 border-[#d2c3a5] hover:scale-110 transition-transform shadow-sm" title="復古紙張"></button>
+                        <button onclick="setTheme('nord')" class="w-6 h-6 rounded-full bg-[#2e3440] border-2 border-[#4c566a] hover:scale-110 transition-transform shadow-sm" title="北歐深夜"></button>
+                    </div>
+
+                    <div class="w-[2px] h-5 bg-neutral-300"></div>
+
+                    <!-- 3D 網格開關 -->
+                    <button id="btn-toggle-grid" class="text-base font-extrabold hover:text-black transition-colors">切換網格</button>
+
+                    <div class="w-[2px] h-5 bg-neutral-300"></div>
+
+                    <!-- 複製規格按鈕 -->
+                    <button id="btn-copy-spec" class="text-base font-extrabold hover:text-black flex items-center gap-1.5 transition-colors" title="複製設計規格文字">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376A8.965 8.965 0 0 0 12 12.75c-.197 0-.39.024-.577.074m0 0a1.122 1.122 0 0 1-1.036-1.514l1.157-3.137a1.125 1.125 0 0 1 1.107-.749h2.247c.563 0 1.042.413 1.117.974l.43 3.23c.045.34-.055.68-.277.945M19.5 8.25V5.625c0-.621-.504-1.125-1.125-1.125H12" />
+                        </svg>
+                        <span>複製規格</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 複製成功的微型通知提示 -->
+        <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-neutral-900 text-white text-sm font-bold px-5 py-2.5 rounded-full opacity-0 pointer-events-none transition-opacity duration-300 z-30 shadow-lg">
+            已複製規格到剪貼簿
+        </div>
+    </div>
+
+    <!-- 網頁互動與 Three.js 渲染引擎程式碼 -->
+    <script>
+        // --- 變數與元件參考定義 ---
+        const inputLength = document.getElementById('input-length');
+        const inputWidth = document.getElementById('input-width');
+        const inputHeight = document.getElementById('input-height');
+        const inputThickness = document.getElementById('input-thickness');
+        const inputHasLid = document.getElementById('input-has-lid');
+        const inputWater = document.getElementById('input-water');
+
+        const valLength = document.getElementById('val-length');
+        const valWidth = document.getElementById('val-width');
+        const valHeight = document.getElementById('val-height');
+        const valThickness = document.getElementById('val-thickness');
+        const valWaterLevel = document.getElementById('val-water-level');
+
+        const resInnerVol = document.getElementById('res-inner-vol');
+        const resInnerVolL = document.getElementById('res-inner-vol-l');
+        const resOuterVol = document.getElementById('res-outer-vol');
+        const resOuterDim = document.getElementById('res-outer-dim');
+        const resGlassVol = document.getElementById('res-glass-vol');
+        const resWaterVol = document.getElementById('res-water-vol');
+        const waterInfoPanel = document.getElementById('water-info-panel');
+
+        const btnAutoRotate = document.getElementById('btn-auto-rotate');
+        const rotateStatusDot = document.getElementById('rotate-status-dot');
+        const btnResetCam = document.getElementById('btn-reset-cam');
+        const btnToggleGrid = document.getElementById('btn-toggle-grid');
+        const btnCopySpec = document.getElementById('btn-copy-spec');
+        const toast = document.getElementById('toast');
+
+        // --- Three.js 核心環境變數 ---
+        let scene, camera, renderer, containerGroup;
+        let ambientLight, dirLight, sideLight;
+        let gridHelper;
+        let isAutoRotating = true;
+        let isShowGrid = true;
+
+        // 3D 渲染視窗容器
+        const canvasContainer = document.getElementById('canvas-container');
+
+        // --- 主題色彩與樣式配置 (提升明亮主題對比度) ---
+        let currentTheme = 'light';
+        const themes = {
+            light: {
+                appClass: 'bg-neutral-100 text-neutral-900',
+                clearColor: 0xf5f5f5, // 乾淨背景色
+                glassColor: 0x0284c7,  // 高對比深海藍
+                edgeColor: 0x0369a1,   // 強化邊緣線條
+                gridColor: 0xd4d4d4,   // 清晰網格
+                waterColor: 0x0ea5e9,  // sky-500
+                lightIntensity: 1.0
+            },
+            dark: {
+                appClass: 'bg-neutral-950 text-neutral-100',
+                clearColor: 0x0a0a0a,
+                glassColor: 0x00f0ff,
+                edgeColor: 0x38bdf8,
+                gridColor: 0x262626,
+                waterColor: 0x3b82f6,
+                lightIntensity: 1.1
+            },
+            sepia: {
+                appClass: 'bg-[#f4ecd8] text-[#433422]',
+                clearColor: 0xf4ecd8,
+                glassColor: 0xbfa07a,
+                edgeColor: 0x8c6d3f,
+                gridColor: 0xe3d4b6,
+                waterColor: 0x14b8a6,
+                lightIntensity: 1.0
+            },
+            nord: {
+                appClass: 'bg-[#2e3440] text-[#d8dee9]',
+                clearColor: 0x2e3440,
+                glassColor: 0x88c0d0,
+                edgeColor: 0x81a1c1,
+                gridColor: 0x3b4252,
+                waterColor: 0x5e81ac,
+                lightIntensity: 1.0
+            }
+        };
+
+        // --- 核心容積與物理計算 ---
+        function calculateAndRender() {
+            const L = parseFloat(inputLength.value);
+            const W = parseFloat(inputWidth.value);
+            const H = parseFloat(inputHeight.value);
+            const t = parseFloat(inputThickness.value);
+            const hasLid = inputHasLid.checked;
+            const waterPercent = parseFloat(inputWater.value);
+
+            // 數值 UI 更新
+            valLength.textContent = `${L} cm`;
+            valWidth.textContent = `${W} cm`;
+            valHeight.textContent = `${H} cm`;
+            valThickness.textContent = `${t} cm`;
+            valWaterLevel.textContent = `${waterPercent}%`;
+
+            // 容積算式
+            const Lin = Math.max(0, L - (2 * t));
+            const Win = Math.max(0, W - (2 * t));
+            const Hin = Math.max(0, H - (hasLid ? (2 * t) : t));
+
+            // 外體積 V_out
+            const Vout = L * W * H;
+
+            // 內容積 V_in
+            const Vin = Lin * Win * Hin;
+
+            // 玻璃實際體積
+            let Vglass = 0;
+            if (hasLid) {
+                Vglass = Vout - Vin;
+            } else {
+                Vglass = Vout - (Lin * Win * (H - t));
+            }
+
+            // 模擬水容量
+            const Hwater = Hin * (waterPercent / 100);
+            const Vwater = Lin * Win * Hwater;
+
+            // 寫入 UI 計算結果 (精簡小數點展現)
+            resInnerVol.textContent = `${Math.round(Vin).toLocaleString()} mL`;
+            resInnerVolL.textContent = `${(Vin / 1000).toFixed(3)} L`;
+            resOuterVol.textContent = `${Math.round(Vout).toLocaleString()} cm³`;
+            resOuterDim.textContent = `${L} × ${W} × ${H} cm`;
+            resGlassVol.textContent = `${Math.round(Vglass).toLocaleString()} cm³`;
+
+            if (waterPercent > 0) {
+                waterInfoPanel.classList.remove('hidden');
+                resWaterVol.textContent = Math.round(Vwater).toLocaleString();
+            } else {
+                waterInfoPanel.classList.add('hidden');
+            }
+
+            // 更新 3D 模型
+            build3DContainer(L, W, H, t, Lin, Win, Hin, hasLid, waterPercent, Hwater);
+        }
+
+        // --- 3D 環境與場景建立 (Three.js) ---
+        function init3D() {
+            const width = canvasContainer.clientWidth;
+            const height = canvasContainer.clientHeight;
+
+            // 1. Scene & Camera
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            
+            // 斜前方透視位置
+            camera.position.set(12, 10, 15);
+            camera.lookAt(0, 0, 0);
+
+            // 2. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            canvasContainer.appendChild(renderer.domElement);
+
+            // 3. Container Group
+            containerGroup = new THREE.Group();
+            containerGroup.rotation.y = Math.PI / 6;
+            containerGroup.rotation.x = 0.1;
+            scene.add(containerGroup);
+
+            // 4. Lights
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(15, 20, 10);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            sideLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            sideLight.position.set(-15, 5, -10);
+            scene.add(sideLight);
+
+            // 5. Grid Helper
+            gridHelper = new THREE.GridHelper(25, 25, 0x000000, 0x000000);
+            gridHelper.position.y = -4;
+            scene.add(gridHelper);
+
+            // 6. 滑鼠/觸控拖曳旋轉
+            initInteraction();
+
+            // 7. 預設載入主題
+            const savedTheme = localStorage.getItem('glass_theme') || 'light';
+            setTheme(savedTheme);
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // --- 3D 幾何物件建立 (渲染寫實的厚度與蓋子) ---
+        function build3DContainer(L, W, H, t, Lin, Win, Hin, hasLid, waterPercent, Hwater) {
+            while(containerGroup.children.length > 0){
+                containerGroup.remove(containerGroup.children[0]);
+            }
+
+            const s = 0.22; 
+
+            const L3d = L * s;
+            const W3d = W * s;
+            const H3d = H * s;
+            const t3d = t * s;
+            
+            const Lin3d = Lin * s;
+            const Win3d = Win * s;
+            const Hin3d = Hin * s;
+
+            const themeConfig = themes[currentTheme];
+
+            // 高物理感的折射玻璃材質
+            const glassMaterial = new THREE.MeshPhysicalMaterial({
+                color: themeConfig.glassColor,
+                transparent: true,
+                opacity: 0.45,
+                roughness: 0.05,
+                metalness: 0.1,
+                transmission: 0.85,
+                ior: 1.55,
+                side: THREE.DoubleSide,
+                depthWrite: true
+            });
+
+            // 強化邊緣線條，極致清晰
+            const edgeMaterial = new THREE.LineBasicMaterial({
+                color: themeConfig.edgeColor,
+                transparent: true,
+                opacity: 0.9,
+                linewidth: 2.5
+            });
+
+            function addGlassPlate(w, h, d, px, py, pz) {
+                const geom = new THREE.BoxGeometry(w, h, d);
+                const mesh = new THREE.Mesh(geom, glassMaterial);
+                mesh.position.set(px, py, pz);
+                containerGroup.add(mesh);
+
+                const edges = new THREE.EdgesGeometry(geom);
+                const line = new THREE.LineSegments(edges, edgeMaterial);
+                line.position.set(px, py, pz);
+                containerGroup.add(line);
+            }
+
+            const baseY = -3; 
+
+            // 1. 底部玻璃
+            addGlassPlate(L3d, t3d, W3d, 0, baseY + t3d/2, 0);
+
+            // 2. 側壁玻璃
+            const sideWallH = hasLid ? Hin3d : (H3d - t3d);
+            const sideWallY = baseY + t3d + (sideWallH / 2);
+
+            // 左右側壁
+            addGlassPlate(t3d, sideWallH, W3d, -L3d/2 + t3d/2, sideWallY, 0);
+            addGlassPlate(t3d, sideWallH, W3d, L3d/2 - t3d/2, sideWallY, 0);
+
+            // 前後側壁
+            addGlassPlate(Lin3d, sideWallH, t3d, 0, sideWallY, -W3d/2 + t3d/2);
+            addGlassPlate(Lin3d, sideWallH, t3d, 0, sideWallY, W3d/2 - t3d/2);
+
+            // 3. 玻璃蓋子 (若啟用)
+            if (hasLid) {
+                addGlassPlate(L3d, t3d, W3d, 0, baseY + H3d - t3d/2, 0);
+            }
+
+            // 4. 水體
+            if (waterPercent > 0 && Hin3d > 0 && Lin3d > 0 && Win3d > 0) {
+                const Hwater3d = Hwater * s;
+                const waterGeom = new THREE.BoxGeometry(Lin3d * 0.99, Hwater3d, Win3d * 0.99);
+                
+                const waterMaterial = new THREE.MeshStandardMaterial({
+                    color: themeConfig.waterColor,
+                    transparent: true,
+                    opacity: 0.65,
+                    roughness: 0.05,
+                    metalness: 0.1,
+                    side: THREE.DoubleSide
+                });
+
+                const waterMesh = new THREE.Mesh(waterGeom, waterMaterial);
+                waterMesh.position.set(0, baseY + t3d + (Hwater3d / 2), 0);
+                containerGroup.add(waterMesh);
+            }
+        }
+
+        // --- 互動操控：滑鼠/觸控拖曳旋轉 ---
+        function initInteraction() {
+            let isDragging = false;
+            let prevMousePos = { x: 0, y: 0 };
+
+            canvasContainer.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                prevMousePos = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const delta = {
+                    x: e.clientX - prevMousePos.x,
+                    y: e.clientY - prevMousePos.y
+                };
+                
+                containerGroup.rotation.y += delta.x * 0.007;
+                containerGroup.rotation.x += delta.y * 0.007;
+                containerGroup.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, containerGroup.rotation.x));
+                
+                prevMousePos = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            canvasContainer.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    prevMousePos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                }
+            }, { passive: true });
+
+            canvasContainer.addEventListener('touchmove', (e) => {
+                if (!isDragging || e.touches.length !== 1) return;
+                const delta = {
+                    x: e.touches[0].clientX - prevMousePos.x,
+                    y: e.touches[0].clientY - prevMousePos.y
+                };
+                
+                containerGroup.rotation.y += delta.x * 0.007;
+                containerGroup.rotation.x += delta.y * 0.007;
+                containerGroup.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, containerGroup.rotation.x));
+                
+                prevMousePos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }, { passive: true });
+
+            window.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+        }
+
+        // --- 功能控制 ---
+        btnAutoRotate.addEventListener('click', () => {
+            isAutoRotating = !isAutoRotating;
+            if (isAutoRotating) {
+                rotateStatusDot.classList.remove('bg-neutral-400');
+                rotateStatusDot.classList.add('bg-emerald-500');
+                showToast('已啟動自動旋轉');
+            } else {
+                rotateStatusDot.classList.remove('bg-emerald-500');
+                rotateStatusDot.classList.add('bg-neutral-400');
+                showToast('已停止自動旋轉');
+            }
+        });
+
+        btnResetCam.addEventListener('click', () => {
+            containerGroup.rotation.set(0.1, Math.PI / 6, 0);
+            camera.position.set(12, 10, 15);
+            camera.lookAt(0, 0, 0);
+            showToast('視角已重設');
+        });
+
+        btnToggleGrid.addEventListener('click', () => {
+            isShowGrid = !isShowGrid;
+            gridHelper.visible = isShowGrid;
+            showToast(isShowGrid ? '網格已開啟' : '網格已隱藏');
+        });
+
+        btnCopySpec.addEventListener('click', () => {
+            const L = inputLength.value;
+            const W = inputWidth.value;
+            const H = inputHeight.value;
+            const t = inputThickness.value;
+            const hasLid = inputHasLid.checked ? "有蓋" : "無蓋";
+            
+            const specText = `=== 3D 玻璃容器設計規格 ===
+外尺寸：長 ${L} cm × 寬 ${W} cm × 高 ${H} cm
+玻璃壁厚：${t} cm
+上蓋配置：${hasLid}
+總外體積：${resOuterVol.textContent}
+內部儲水容積：${resInnerVol.textContent} (${resInnerVolL.textContent})
+玻璃耗材體積：${resGlassVol.textContent}
+產生時間：${new Date().toLocaleString()}`;
+
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = specText;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            try {
+                document.execCommand('copy');
+                showToast('設計規格已複製到剪貼簿');
+            } catch (err) {
+                showToast('複製失敗，請手動複製');
+            }
+            document.body.removeChild(tempTextArea);
+        });
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 2000);
+        }
+
+        // 主題色彩切換
+        function setTheme(themeName) {
+            currentTheme = themeName;
+            const theme = themes[themeName];
+            
+            const app = document.getElementById('app');
+            app.className = "relative w-full h-full flex flex-col md:flex-row transition-colors duration-500 " + theme.appClass;
+
+            const controlPanel = app.querySelector('div');
+            if (themeName === 'light' || themeName === 'sepia') {
+                controlPanel.className = "w-full md:w-[440px] h-[45%] md:h-full flex flex-col justify-between border-b md:border-b-0 md:border-r border-neutral-300 p-5 md:p-6 overflow-y-auto no-scrollbar z-10 bg-white shadow-2xl transition-colors duration-500 text-neutral-900";
+            } else {
+                controlPanel.className = "w-full md:w-[440px] h-[45%] md:h-full flex flex-col justify-between border-b md:border-b-0 md:border-r border-neutral-800 p-5 md:p-6 overflow-y-auto no-scrollbar z-10 bg-neutral-900 shadow-2xl transition-colors duration-500 text-neutral-100";
+            }
+
+            // 切換 3D 場景背景
+            if (renderer) {
+                renderer.setClearColor(theme.clearColor, 1);
+            }
+            if (ambientLight) {
+                ambientLight.intensity = theme.lightIntensity * 0.7;
+            }
+            if (dirLight) {
+                dirLight.intensity = theme.lightIntensity * 1.1;
+            }
+
+            // 重造地面格線
+            if (gridHelper) {
+                scene.remove(gridHelper);
+                gridHelper = new THREE.GridHelper(25, 25, theme.gridColor, theme.gridColor);
+                gridHelper.position.y = -4;
+                gridHelper.visible = isShowGrid;
+                scene.add(gridHelper);
+            }
+
+            localStorage.setItem('glass_theme', themeName);
+            calculateAndRender();
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            const width = canvasContainer.clientWidth;
+            const height = canvasContainer.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isAutoRotating && containerGroup) {
+                containerGroup.rotation.y += 0.003;
+            }
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // 綁定輸入元件
+        [inputLength, inputWidth, inputHeight, inputThickness, inputHasLid, inputWater].forEach(el => {
+            el.addEventListener('input', calculateAndRender);
+            el.addEventListener('change', calculateAndRender);
+        });
+
+        window.onload = function() {
+            init3D();
+            
+            if (isAutoRotating) {
+                rotateStatusDot.classList.add('bg-emerald-500');
+            }
+
+            calculateAndRender();
+            animate();
+        };
+    </script>
+</body>
+</html>
